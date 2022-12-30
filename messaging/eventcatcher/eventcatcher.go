@@ -22,6 +22,7 @@ import (
 	"mindmachine/messaging/blocks"
 	"mindmachine/messaging/nostrelay"
 	"mindmachine/mindmachine"
+	"mindmachine/scumclass/gnostr"
 )
 
 func Start(terminate chan struct{}, wg *sync.WaitGroup) {
@@ -40,6 +41,7 @@ func Start(terminate chan struct{}, wg *sync.WaitGroup) {
 	if !samizdatStarted {
 		subscribeToSamizdat()
 	}
+	go subscribeToKind1()
 	fetchEventPackLooper()
 	if blocksBehind() > 1 {
 		if shares.VotePowerForAccount(mindmachine.MyWallet().Account) > 0 && mindmachine.MakeOrGetConfig().GetBool("forceBlocks") {
@@ -256,6 +258,7 @@ func fetchLatest640001() {
 				if opr != highestSequenceEventPack.OpReturn {
 					mindmachine.LogCLI("We reached a different OP_RETURN to the one provided. We have: "+opr+" eventpack has: "+highestSequenceEventPack.OpReturn, 1)
 					failed = true
+					mindmachine.Shutdown()
 				}
 				if !failed {
 					mindmachine.LogCLI(fmt.Sprintf("Successfully reproduce state: %s", idHighestSequence), 3)
@@ -354,6 +357,35 @@ func subscribeToSamizdat() {
 			}
 		}()
 	}
+}
+
+func subscribeToKind1() {
+	pool := nostr.NewRelayPool()
+	mindmachine.LogCLI("Subscribing to Kind 1 Events", 3)
+	for _, s := range mindmachine.MakeOrGetConfig().GetStringSlice("relays") {
+		errchan := pool.Add(s, nostr.SimplePolicy{Read: true, Write: true})
+		go func() {
+			for err := range errchan {
+				mindmachine.LogCLI(fmt.Sprintf("%s %s", err.Error(), s), 2)
+			}
+		}()
+	}
+
+	filters := nostr.Filters{}
+	filters = append(filters, nostr.Filter{
+		//Kinds: []int{640001},
+	})
+	_, evnts, _ := pool.Sub(filters)
+	go func() {
+		for {
+			select {
+			case e := <-nostr.Unique(evnts):
+				if ok, _ := e.CheckSignature(); ok {
+					gnostr.HandleEvent(mindmachine.ConvertToInternalEvent(&e))
+				}
+			}
+		}
+	}()
 }
 
 func startEventSubscription() {

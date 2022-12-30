@@ -118,7 +118,7 @@ func FetchEventPack(eventPack []string) (events []mindmachine.Event, ok bool) {
 			events = append(events, mindmachine.ConvertToInternalEvent(&n))
 			lastMessageTypeIsBlock = false
 		}
-		if !ok && len(id) < 7 { //1000000!
+		if !ok && len(id) == 6 { //1000000!
 			//if height is last+1 cool, if height is last+x then last message MUST be a block
 			if height, err := cast.ToInt64E(id); err != nil {
 				mindmachine.LogCLI(err, 1)
